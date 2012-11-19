@@ -5,7 +5,8 @@ async = require('async')
 module.exports = (schema, options) ->
   socialReq = new SocialReq()
   socialReq
-    .use('google', {consumerKey: options.google.consumerKey, consumerSecret: options.google.consumerSecret})
+    .use('google', {clientId: options.google.clientId, clientSecret: options.google.clientSecret})
+    .use('googleplus', {clientId: options.google.clientId, clientSecret: options.google.clientSecret})
     .use('facebook', {appId: options.facebook.appId, appSecret: options.facebook.appSecret})
   schema.add
     auth:
