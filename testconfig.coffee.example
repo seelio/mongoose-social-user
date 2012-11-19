@@ -1,0 +1,20 @@
+module.exports = 
+  google:
+    consumerKey: 'your google consumerKey'
+    consumerSecret: 'your google consumerSecret'
+    access_token: '...'
+    access_token_secret: '...'
+  facebook:
+    appId: '...'
+    appSecret: '...'
+    access_token: '...'
+  twitter:
+    consumerKey: '...'
+    consumerSecret: '...'
+    access_token: '...'
+    access_token_secret: '...'
+  linkedin:
+    apiKey: '...'
+    secretKey: '...'
+    access_token: '...'
+    access_token_secret: '...'
