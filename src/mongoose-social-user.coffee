@@ -33,6 +33,14 @@ module.exports = (schema, options) ->
         createdAt: Date
         userData: {}
         contacts: Array
+      googleplus:
+        id: String
+        username: String
+        aT: String
+        aTS: String
+        createdAt: Date
+        userData: {}
+        contacts: Array
   _findOrCreateUser = (params, done) ->
     return done(new Error("couldn't log you in"))  if not params.service or not params.session or not params.data
     self = @
@@ -129,25 +137,37 @@ module.exports = (schema, options) ->
           access_token: self.auth.facebook.aT
         google: 
           access_token: self.auth.google.aT
-          access_token_secret: self.auth.google.aTS
+        googleplus: 
+          access_token: self.auth.google.aT
     socialReq.get @.id, params, (err, results) ->
       processingFunctions = []
       for requestType of results
         switch requestType
-          when 'google'
-            if results[service].contacts?
-              processingFunctions.push (cb) ->
-                async.filter results[service].contacts, (contact, cb) ->
-                  cb contact.email?
-                , (contacts) ->
-                  async.sortBy contacts, (contact, cb) ->
-                    console.log contact.entry.gd$name?.gd$familyName
-                    cb null, contact.entry.gd$name?.gd$familyName
-                  , (err, contacts) ->
-                    results[service].contacts = contacts
-                    cb()
+          when 'contacts'
+            for service of results.contacts
+              unless results.contacts[service].error?
+                processingFunctions.push (cb) ->
+                  async.filter results.contacts[service], (contact, cb) ->
+                    cb contact.email?
+                  , (contacts) ->
+                    async.sortBy contacts, (contact, cb) ->
+                      cb null, contact.entry.gd$name?.gd$familyName
+                    , (err, contacts) ->
+                      self.auth[service].contacts = results.contacts[service] = contacts
+                      cb()
+          when 'details'
+            for service of results.details
+              unless results.details[service].error?
+                if not self.auth[service].userData?
+                  self.auth[service].userData = results.details[service]
+                else 
+                  for param of results.details[service]
+                    self.auth[service].userData[param] = results.details[service][param]
+                  self.markModified('auth.' + service + '.userData')
       async.parallel processingFunctions, (err, processingResults) ->
-        done err, results
+        return done err  if err
+        self.save (err) ->
+          done err, results
 
   ###
   schema.on 'init', (model) ->

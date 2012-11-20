@@ -86,21 +86,28 @@ describe 'Mongoose Social Plugin', () ->
       User.findById '000000000000000000000005', (err, user) ->
         throw err  if err
         user.auth.google.aT = testConfig.google.access_token
-        user.getSocial {contacts: ['google']}, (err, results) ->
+        user.getSocial {contacts: ['google'], details: ['google', 'googleplus']}, (err, results) ->
           throw err  if err
           expect(results.contacts.google.length).to.be.greaterThan(0)
-          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google']}).to.be.ok();
+          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google'], details: ['google', 'googleplus']}).to.be.ok();
           expect(results.contacts.google.error).to.not.be.ok();
+          expect(user.auth.google.contacts.length).to.be.greaterThan(0)
+          expect(user.auth.google.userData.name).to.be.ok()
+          expect(user.auth.google.userData.given_name).to.be.ok()
+          expect(user.auth.googleplus.userData.name.givenName).to.be.ok()
           done();
 
     it 'should not get the requested social data with incorrect data', (done) ->
       User.findById '000000000000000000000005', (err, user) ->
         throw err  if err
         user.auth.google.aT = 'asdfasdfasdf'
-        user.getSocial {contacts: ['google']}, (err, results) ->
+        user.getSocial {contacts: ['google'], details: ['google']}, (err, results) ->
           throw err  if err
-          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google']}).to.be.ok();
-          expect(results.contacts.google.error).to.be.ok();
+          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google'], details: ['google']}).to.be.ok();
+          expect(results.contacts.google.error).to.be.ok()
+          expect(results.details.google.error).to.be.ok()
+          expect(user.auth.google.userData).not.to.be.ok()
+          expect(user.auth.google.contacts.length).to.be(0)
           done();
 
   describe '.findOrCreateUser', () ->
@@ -122,9 +129,10 @@ describe 'Mongoose Social Plugin', () ->
         userAttributes =
           authenticated: true,
           id: '111111111111111111',
-          firstname: 'David',
+          name: 'David Jsa'
+          given_name: 'David',
           email: 'kiesent@gmail.com',
-          lastname: 'Jsa',
+          family_name: 'Jsa',
         accessToken = 'ya29.AHES6ZTbGtzk9pWGtw33ypFcf7B7RYn6zowhe1htQ9pFwnA'
         accessTokExtra = 
           token_type: 'Bearer',
@@ -137,15 +145,14 @@ describe 'Mongoose Social Plugin', () ->
         it 'should create a user from everyAuth and add the access tokens', (done) ->
           User.findOrCreateUser('google').bind(promiseScope)(session, accessToken, accessTokExtra, userAttributes)
             .then (user) ->
-              console.log session.newUser
               expect(session.newUser).to.be.ok()
-              expect(session.authUserData.firstname).to.be.ok()
+              expect(session.authUserData.given_name).to.be.ok()
               expect(user.auth.google.id).to.be '111111111111111111'
               expect(user.auth.google.aT).to.be 'ya29.AHES6ZTbGtzk9pWGtw33ypFcf7B7RYn6zowhe1htQ9pFwnA'
               expect(user.auth.google.userData.aTE.refresh_token).to.be '1/vioj8dHiZzxz7oK8wlEoIErBow0uno8-M4ky-ShwHhc'
               expect(user.auth.google.userData.email).to.be 'kiesent@gmail.com'
-              expect(user.auth.google.userData.firstname).to.be 'David'
-              expect(user.auth.google.userData.lastname).to.be 'Jsa'
+              expect(user.auth.google.userData.given_name).to.be 'David'
+              expect(user.auth.google.userData.family_name).to.be 'Jsa'
               expect(user.auth.google.createdAt).to.be.ok()
               done()
         it 'should find an existing user from everyAuth if there is no user in the session, and update access tokens', (done) ->
