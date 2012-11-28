@@ -29,7 +29,7 @@ module.exports = (schema, options) ->
         id: String
         username: String
         aT: String
-        aTS: String
+        rT: String
         createdAt: Date
         userData: {}
         contacts: Array
@@ -37,7 +37,7 @@ module.exports = (schema, options) ->
         id: String
         username: String
         aT: String
-        aTS: String
+        rT: String
         createdAt: Date
         userData: {}
         contacts: Array
@@ -49,6 +49,7 @@ module.exports = (schema, options) ->
       user.auth[params.service].username = params.data.username
       user.auth[params.service].createdAt = new Date() if newUser
       user.auth[params.service].aT = params.data.aT
+      user.auth[params.service].rT = params.data.rT if params.data.rT?
       user.auth[params.service].aTS = params.data.aTS
       if not user.auth[params.service].userData?
         user.auth[params.service].userData = params.data
@@ -106,6 +107,7 @@ module.exports = (schema, options) ->
           data: userAttributes
         params.data.username = params.data.email
         params.data.aT = accessToken
+        params.data.rT = accessTokExtra.refresh_token if accessTokExtra.refresh_token?
         params.data.aTE = accessTokExtra
         _findOrCreateUser.bind(self) params, (err, user, newUser) ->
           return promise.fulfill [err] if err
@@ -129,7 +131,8 @@ module.exports = (schema, options) ->
           session.authUserData.service = params.service
           promise.fulfill user
         promise
-  schema.methods.getSocial = (params, done) ->
+
+  schema.methods._socialReqGet = (params, cb) ->
     self = @
     socialReq.getTokens (id, cb) ->
       cb
@@ -137,43 +140,83 @@ module.exports = (schema, options) ->
           access_token: self.auth.facebook.aT
         google: 
           access_token: self.auth.google.aT
+          refresh_token: self.auth.google.rT
         googleplus: 
           access_token: self.auth.google.aT
-    socialReq.get @.id, params, (err, results) ->
+    socialReq.get @.id, params, cb
+
+  schema.methods.getSocial = (params, done) ->
+    self = @
+    self._socialReqGet params, (err, results) ->
       processingFunctions = []
+      secondTry = false
+      secondTryParams = {}
+      secondTryServices = []
       for requestType of results
-        switch requestType
-          when 'contacts'
-            for service of results.contacts
-              unless results.contacts[service].error?
-                processingFunctions.push (cb) ->
-                  async.filter results.contacts[service], (contact, cb) ->
-                    cb contact.email?
-                  , (contacts) ->
-                    async.sortBy contacts, (contact, cb) ->
-                      cb null, contact.entry.gd$name?.gd$familyName
-                    , (err, contacts) ->
-                      self.auth[service].contacts = results.contacts[service] = contacts
-                      cb()
-          when 'details'
-            for service of results.details
-              unless results.details[service].error?
-                if not self.auth[service].userData?
-                  self.auth[service].userData = results.details[service]
-                else 
-                  for param of results.details[service]
-                    self.auth[service].userData[param] = results.details[service][param]
-                  self.markModified('auth.' + service + '.userData')
-      async.parallel processingFunctions, (err, processingResults) ->
-        return done err  if err
-        self.save (err) ->
-          done err, results
+        for service of results[requestType]
+          if results[requestType][service].error?
+            secondTry = true
+            secondTryParams[requestType] = [] unless secondTryParams[requestType]?
+            secondTryParams[requestType].push service 
+            secondTryServices.push service if secondTryServices.indexOf(service) is -1
+            
+      async.waterfall [
+        (cb) ->
+          return cb() if not secondTry
+          async.forEach secondTryServices, (service, cb) ->
+            if service is 'google'
+              self._refreshAccessToken service, (err, user) ->
+                cb(err)
+            else if service is 'googleplus'
+              self._refreshAccessToken 'google', (err, user) ->
+                cb(err)
+            else if service is 'facebook'
+              return cb(new Error 'User is not authenticated with facebook, redirect user to facebook authentication')
+            else
+              return cb(new Error 'Service ' + service + 'is not compatible. Is it spelled incorrectly?')
+          , (err) ->
+            return cb(err) if err
+            self._socialReqGet secondTryParams, (err, secondResults) ->
+              return cb(err) if err
+              for requestType of secondResults
+                for service of secondResults[requestType]
+                  return cb(secondResults[requestType][service].error) if secondResults[requestType][service].error?
+                  results[requestType][service] = secondResults[requestType][service]
+              cb()
+      ], (err) ->
+        return done err if err
+        for requestType of results
+          switch requestType
+            when 'contacts'
+              for service of results.contacts
+                unless results.contacts[service].error?
+                  processingFunctions.push (cb) ->
+                    async.filter results.contacts[service], (contact, cb) ->
+                      cb contact.email?
+                    , (contacts) ->
+                      async.sortBy contacts, (contact, cb) ->
+                        cb null, contact.entry.gd$name?.gd$familyName
+                      , (err, contacts) ->
+                        self.auth[service].contacts = results.contacts[service] = contacts
+                        cb()
+            when 'details'
+              for service of results.details
+                unless results.details[service].error?
+                  if not self.auth[service].userData?
+                    self.auth[service].userData = results.details[service]
+                  else 
+                    for param of results.details[service]
+                      self.auth[service].userData[param] = results.details[service][param]
+                    self.markModified('auth.' + service + '.userData')
+        async.parallel processingFunctions, (err, processingResults) ->
+          return done err  if err
+          self.save (err) ->
+            done err, results
 
   ###
   schema.on 'init', (model) ->
     socialReq.getTokens (id, cb) ->
       model.findById id, (err, user) ->
-        console.log err, user
         return cb(err || new Error 'User does not exist') if err? or not user?
         cb
           facebook:
@@ -182,9 +225,28 @@ module.exports = (schema, options) ->
             access_token: user.auth.google.aT
             access_token_secret: user.auth.google.aTS###
 
-  schema.methods._invalidateAT = (service, done) ->
+  schema.methods._invalidateAccessToken = (service, done) ->
     return done null, @ if not @auth[service]?
     @auth[service].aT = undefined
     @auth[service].aTS = undefined
     @save done
+  schema.methods._refreshAccessToken = (service, done) ->
+    return done null, @ if not @auth[service]?
+    return done(new Error('No refresh token for service ' + service + ', user needs to be redirected to authentication screen')) if not @auth[service].rT?
+    self = @
+    socialReq.getTokens (id, cb) ->
+      cb
+        facebook:
+          access_token: self.auth.facebook.aT
+        google: 
+          access_token: self.auth.google.aT
+          refresh_token: self.auth.google.rT
+        googleplus: 
+          access_token: self.auth.google.aT
+    socialReq.get @.id, {tokens: [service]}, (err, results) ->
+      done (err or new Error 'Token refresh failed for some reason') if err or not results.tokens[service]?.access_token?
+      self.auth.google.aT = results.tokens[service].access_token
+      self.save done
+  
+
   return

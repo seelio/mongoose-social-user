@@ -39,7 +39,7 @@ describe 'Mongoose Social Plugin', () ->
             google:
               id: '114277323590337190780'
               aT: 'iamanaccesstoken'
-              aTS: 'iamanaccesstokensecret'
+              rT: 'iamarefreshtoken'
         ,
           _id: '000000000000000000000005'
           auth:
@@ -70,15 +70,43 @@ describe 'Mongoose Social Plugin', () ->
       done()
 
   describe '#_invalidateAccessToken', () ->
-    it 'should invalidate an access token for a given service', (done) ->
+    it 'should invalidate an access token for oauth2 for a given service', (done) ->
       User.findById '000000000000000000000003', (err, user) ->
         throw err if err
         expect(user.auth.google.aT).to.be.ok()
-        expect(user.auth.google.aTS).to.be.ok()
-        user._invalidateAT 'google', (err, user) ->
+        expect(user.auth.google.rT).to.be.ok()
+        user._invalidateAccessToken 'google', (err, user) ->
           expect(user.auth.google.aT).not.to.be.ok()
-          expect(user.auth.google.aTS).not.to.be.ok()
+          expect(user.auth.google.rT).to.be.ok()
           done()
+
+    it 'should invalidate an access token for oauth for a given service'
+
+  describe '#_refreshAccessToken', () ->
+    describe 'for oauth2', () ->
+      describe 'for google', () ->
+        it 'should refresh an access token', (done) ->
+          User.findById '000000000000000000000003', (err, user) ->
+            throw err if err
+            oldAccessToken = user.auth.google.aT
+            oldRefreshToken = user.auth.google.rT = testConfig.google.refresh_token
+            expect(user.auth.google.aT).to.be.ok()
+            expect(user.auth.google.rT).to.be.ok()
+            user._refreshAccessToken 'google', (err, user) ->
+              throw err if err
+              expect(user.auth.google.aT).to.be.ok()
+              expect(user.auth.google.aT).not.to.be oldAccessToken
+              expect(user.auth.google.rT).to.be.ok()
+              expect(user.auth.google.rT).to.be oldRefreshToken
+              done()
+        it 'should fail correctly if there is no access token', (done) ->
+          User.findById '000000000000000000000003', (err, user) ->
+            throw err if err
+            user.auth.google.rT = null
+            user._refreshAccessToken 'google', (err, user) ->
+              expect(err.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
+              done()
+    it 'should refresh an access token for oauth for a given service'
 
   describe '#getSocial', () ->
     it 'should get and cache the requested social data', (done) ->
@@ -86,6 +114,7 @@ describe 'Mongoose Social Plugin', () ->
       User.findById '000000000000000000000005', (err, user) ->
         throw err  if err
         user.auth.google.aT = testConfig.google.access_token
+        user.auth.google.rT = null
         user.getSocial {contacts: ['google'], details: ['google', 'googleplus']}, (err, results) ->
           throw err  if err
           expect(results.contacts.google.length).to.be.greaterThan(0)
@@ -97,17 +126,32 @@ describe 'Mongoose Social Plugin', () ->
           expect(user.auth.googleplus.userData.name.givenName).to.be.ok()
           done();
 
-    it 'should not get the requested social data with incorrect data', (done) ->
-      User.findById '000000000000000000000005', (err, user) ->
-        throw err  if err
-        user.auth.google.aT = 'asdfasdfasdf'
-        user.getSocial {contacts: ['google'], details: ['google']}, (err, results) ->
+    describe 'with incorrect access token', () ->
+      userWithABadAccessToken = null
+      beforeEach (done) ->
+        User.findById '000000000000000000000005', (err, user) ->
           throw err  if err
-          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google'], details: ['google']}).to.be.ok();
-          expect(results.contacts.google.error).to.be.ok()
-          expect(results.details.google.error).to.be.ok()
-          expect(user.auth.google.userData).not.to.be.ok()
-          expect(user.auth.google.contacts.length).to.be(0)
+          user.auth.google.aT = 'asdfasdfasdf'
+          userWithABadAccessToken = user;
+          done();
+      it 'should try to refresh the access token with refresh token and refresh again', (done) ->
+        @timeout(10000);
+        userWithABadAccessToken.auth.google.rT = testConfig.google.refresh_token
+        userWithABadAccessToken.getSocial {contacts: ['google'], details: ['google', 'googleplus']}, (err, results) ->
+          throw err  if err
+          expect(results.contacts.google.length).to.be.greaterThan(0)
+          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google'], details: ['google', 'googleplus']}).to.be.ok();
+          expect(results.contacts.google.error).to.not.be.ok();
+          expect(userWithABadAccessToken.auth.google.contacts.length).to.be.greaterThan(0)
+          expect(userWithABadAccessToken.auth.google.userData.name).to.be.ok()
+          expect(userWithABadAccessToken.auth.google.userData.given_name).to.be.ok()
+          expect(userWithABadAccessToken.auth.googleplus.userData.name.givenName).to.be.ok()
+          done();
+      it 'should pass an error without a refresh token', (done) ->
+        @timeout(10000);
+        userWithABadAccessToken.auth.google.rT = null
+        userWithABadAccessToken.getSocial {contacts: ['google'], details: ['google']}, (err, results) ->
+          expect(err.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
           done();
 
   describe '.findOrCreateUser', () ->
@@ -149,6 +193,7 @@ describe 'Mongoose Social Plugin', () ->
               expect(session.authUserData.given_name).to.be.ok()
               expect(user.auth.google.id).to.be '111111111111111111'
               expect(user.auth.google.aT).to.be 'ya29.AHES6ZTbGtzk9pWGtw33ypFcf7B7RYn6zowhe1htQ9pFwnA'
+              expect(user.auth.google.rT).to.be '1/vioj8dHiZzxz7oK8wlEoIErBow0uno8-M4ky-ShwHhc'
               expect(user.auth.google.userData.aTE.refresh_token).to.be '1/vioj8dHiZzxz7oK8wlEoIErBow0uno8-M4ky-ShwHhc'
               expect(user.auth.google.userData.email).to.be 'kiesent@gmail.com'
               expect(user.auth.google.userData.given_name).to.be 'David'
@@ -157,11 +202,13 @@ describe 'Mongoose Social Plugin', () ->
               done()
         it 'should find an existing user from everyAuth if there is no user in the session, and update access tokens', (done) ->
           userAttributes.id = '114277323590337190780'
+          accessTokExtra.refresh_token = null
           User.findOrCreateUser('google').bind(promiseScope)(session, accessToken, accessTokExtra, userAttributes)
             .then (user) ->
               expect(session.newUser).not.to.be.ok()
               expect(user.auth.google.id).to.be '114277323590337190780'
               expect(user.auth.google.aT).to.be 'ya29.AHES6ZTbGtzk9pWGtw33ypFcf7B7RYn6zowhe1htQ9pFwnA'
+              expect(user.auth.google.rT).to.be 'iamarefreshtoken'
               done()
       describe 'if there is a user in the session', () ->
         beforeEach () ->
