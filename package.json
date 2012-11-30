@@ -1,6 +1,6 @@
 {
   "name": "mongoose-social-user",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "dependencies": {
     "expect.js": "0.1.x",
     "mongoose": "3.3.x",
