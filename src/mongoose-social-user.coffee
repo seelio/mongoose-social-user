@@ -210,7 +210,11 @@ module.exports = (schema, options) ->
                 unless results.contacts[service].error?
                   processingFunctions.push (cb) ->
                     async.filter results.contacts[service], (contact, cb) ->
-                      cb contact.email?
+                      switch service
+                        when 'google'
+                          cb contact.email?
+                        else
+                          cb true
                     , (contacts) ->
                       async.sortBy contacts, (contact, cb) ->
                         cb null, contact.entry.gd$name?.gd$familyName
