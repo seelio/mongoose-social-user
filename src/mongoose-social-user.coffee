@@ -148,6 +148,7 @@ module.exports = (schema, options) ->
   schema.methods.getSocial = (params, done) ->
     self = @
     self._socialReqGet params, (err, results) ->
+      return done err if err
       processingFunctions = []
       secondTry = false
       secondTryParams = {}
@@ -159,28 +160,45 @@ module.exports = (schema, options) ->
             secondTryParams[requestType] = [] unless secondTryParams[requestType]?
             secondTryParams[requestType].push service 
             secondTryServices.push service if secondTryServices.indexOf(service) is -1
-            
+      removeServiceFromSecondTryParams = (service) ->
+        for requestType of secondTryParams
+          i = secondTryParams[requestType].indexOf service
+          secondTryParams[requestType].splice i,1 if i isnt -1
+          delete secondTryParams[requestType] if Object.keys(secondTryParams[requestType]).length is 0
+      setErrorsForService = (service, err) ->
+        for requestType of results
+          for resultService of results[requestType] 
+            if resultService is service
+              results[requestType][service].error = err
       async.waterfall [
         (cb) ->
           return cb() if not secondTry
           async.forEach secondTryServices, (service, cb) ->
             if service is 'google'
               self._refreshAccessToken service, (err, user) ->
-                cb(err)
+                if err
+                  removeServiceFromSecondTryParams service
+                  setErrorsForService service, err
+                cb()
             else if service is 'googleplus'
               self._refreshAccessToken 'google', (err, user) ->
-                cb(err)
+                if err
+                  removeServiceFromSecondTryParams service
+                  setErrorsForService service, err
+                cb()
             else if service is 'facebook'
-              return cb(new Error 'User is not authenticated with facebook, redirect user to facebook authentication')
+              removeServiceFromSecondTryParams service
+              cb()
             else
-              return cb(new Error 'Service ' + service + 'is not compatible. Is it spelled incorrectly?')
+              removeServiceFromSecondTryParams service
+              cb()
           , (err) ->
             return cb(err) if err
+            return cb() if Object.keys(secondTryParams).length is 0
             self._socialReqGet secondTryParams, (err, secondResults) ->
               return cb(err) if err
               for requestType of secondResults
                 for service of secondResults[requestType]
-                  return cb(secondResults[requestType][service].error) if secondResults[requestType][service].error?
                   results[requestType][service] = secondResults[requestType][service]
               cb()
       ], (err) ->

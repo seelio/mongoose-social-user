@@ -147,11 +147,14 @@ describe 'Mongoose Social Plugin', () ->
           expect(userWithABadAccessToken.auth.google.userData.given_name).to.be.ok()
           expect(userWithABadAccessToken.auth.googleplus.userData.name.givenName).to.be.ok()
           done();
-      it 'should pass an error without a refresh token', (done) ->
+      it 'should pass errors without a refresh token', (done) ->
         @timeout(10000);
         userWithABadAccessToken.auth.google.rT = null
-        userWithABadAccessToken.getSocial {contacts: ['google'], details: ['google']}, (err, results) ->
-          expect(err.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
+        userWithABadAccessToken.getSocial {contacts: ['google', 'facebook'], details: ['google']}, (err, results) ->
+          throw err if err
+          expect(results.contacts.facebook.error.message).to.be.ok()
+          expect(results.contacts.google.error.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
+          expect(results.details.google.error.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
           done();
 
   describe '.findOrCreateUser', () ->

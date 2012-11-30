@@ -1,2 +1,3 @@
 node_modules/
 testconfig.coffee
+npm-debug.log
