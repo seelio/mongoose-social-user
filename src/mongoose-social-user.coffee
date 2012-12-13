@@ -3,6 +3,24 @@ SocialReq = require('social-request')
 async = require('async')
 
 module.exports = (schema, options) ->
+  SocialUserDataSchema = new mongoose.Schema
+    _user: 
+      type: mongoose.Schema.Types.ObjectId
+      ref: options.userModel or 'User'
+    facebook: 
+      userData: {}
+      contacts: Array
+    twitter:
+      userData: {}
+      contacts: Array
+    google:
+      userData: {}
+      contacts: Array
+    googleplus:
+      userData: {}
+      contacts: Array
+  SocialUserData = mongoose.connection.model('SocialUserData', SocialUserDataSchema)
+
   socialReq = new SocialReq()
   socialReq
     .use('google', {clientId: options.google.clientId, clientSecret: options.google.clientSecret})
@@ -15,32 +33,24 @@ module.exports = (schema, options) ->
         username: String
         aT: String
         createdAt: Date
-        userData: {}
-        contacts: Array
       twitter:
         id: String
         username: String
         aT: String
         aTS: String
         createdAt: Date
-        userData: {}
-        contacts: Array
       google:
         id: String
         username: String
         aT: String
         rT: String
         createdAt: Date
-        userData: {}
-        contacts: Array
       googleplus:
         id: String
         username: String
         aT: String
         rT: String
         createdAt: Date
-        userData: {}
-        contacts: Array
   _findOrCreateUser = (params, done) ->
     return done(new Error("couldn't log you in"))  if not params.service or not params.session or not params.data
     self = @
@@ -51,14 +61,32 @@ module.exports = (schema, options) ->
       user.auth[params.service].aT = params.data.aT
       user.auth[params.service].rT = params.data.rT if params.data.rT?
       user.auth[params.service].aTS = params.data.aTS
-      if not user.auth[params.service].userData?
-        user.auth[params.service].userData = params.data
-      else 
-        for param of params.data
-          user.auth[params.service].userData[param] = params.data[param]
-        user.markModified('auth.' + params.service + '.userData')
-      user.save (err) ->
-        done err, user, newUser
+      async.waterfall [
+        (cb) ->
+          SocialUserData.findOne {_user: user._id}, cb
+      ,
+        (socialUserData, cb) ->
+          if not socialUserData?
+            socialUserData = new SocialUserData
+              _user: user._id
+            socialUserData.save cb
+          else
+            cb null, socialUserData
+      ], (err, socialUserData) ->
+        return done err if err
+        if not socialUserData[params.service]?.userData?
+          socialUserData[params.service].userData = params.data
+        else 
+          for param of params.data
+            socialUserData[params.service].userData[param] = params.data[param]
+          socialUserData.markModified(params.service + '.userData')
+        async.parallel
+          user: (cb) ->
+            user.save cb
+          socialUserData: (cb) ->
+            socialUserData.save cb
+        , (err, results) ->
+          done err, user, newUser
     userParams = {}
     userParams['auth.' + params.service + '.id'] = params.data.id
     if params.session?.auth?.userId?
@@ -203,37 +231,57 @@ module.exports = (schema, options) ->
               cb()
       ], (err) ->
         return done err if err
-        for requestType of results
-          switch requestType
-            when 'contacts'
-              for service of results.contacts
-                unless results.contacts[service].error?
-                  processingFunctions.push (cb) ->
-                    async.filter results.contacts[service], (contact, cb) ->
-                      switch service
-                        when 'google'
-                          cb contact.email?
-                        else
-                          cb true
-                    , (contacts) ->
-                      async.sortBy contacts, (contact, cb) ->
-                        cb null, contact.entry.gd$name?.gd$familyName
-                      , (err, contacts) ->
-                        self.auth[service].contacts = results.contacts[service] = contacts
-                        cb()
-            when 'details'
-              for service of results.details
-                unless results.details[service].error?
-                  if not self.auth[service].userData?
-                    self.auth[service].userData = results.details[service]
-                  else 
-                    for param of results.details[service]
-                      self.auth[service].userData[param] = results.details[service][param]
-                    self.markModified('auth.' + service + '.userData')
-        async.parallel processingFunctions, (err, processingResults) ->
-          return done err  if err
-          self.save (err) ->
-            done err, results
+        async.waterfall [
+          (cb) ->
+            SocialUserData.findOne {_user: self._id}, cb
+        ,
+          (socialUserData, cb) ->
+            if not socialUserData?
+              socialUserData = new SocialUserData
+                _user: self._id
+              socialUserData.save cb
+            else
+              cb null, socialUserData
+        ], (err, socialUserData) ->
+          return done err if err
+          for requestType of results
+            switch requestType
+              when 'contacts'
+                for service of results.contacts
+                  unless results.contacts[service].error?
+                    processingFunctions.push (cb) ->
+                      async.filter results.contacts[service], (contact, cb) ->
+                        switch service
+                          when 'google'
+                            cb contact.email?
+                          else
+                            cb true
+                      , (contacts) ->
+                        async.sortBy contacts, (contact, cb) ->
+                          cb null, contact.entry.gd$name?.gd$familyName
+                        , (err, contacts) ->
+                          done err  if err
+                          socialUserData[service] = {} unless socialUserData[service]
+                          socialUserData[service].contacts = results.contacts[service] = contacts
+                          cb()
+              when 'details'
+                for service of results.details
+                  unless results.details[service].error?
+                    if not socialUserData[service].userData?
+                      socialUserData[service].userData = results.details[service]
+                    else 
+                      for param of results.details[service]
+                        socialUserData[service].userData[param] = results.details[service][param]
+                      socialUserData.markModified(service + '.userData')
+          async.parallel processingFunctions, (err, processingResults) ->
+            return done err  if err
+            async.parallel
+              user: (cb) ->
+                self.save cb
+              socialUserData: (cb) ->
+                socialUserData.save cb
+            , (err, models) ->
+              done err, results
 
   ###
   schema.on 'init', (model) ->
