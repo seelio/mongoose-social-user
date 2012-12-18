@@ -19,7 +19,8 @@ module.exports = (schema, options) ->
     googleplus:
       userData: {}
       contacts: Array
-  SocialUserData = mongoose.connection.model('SocialUserData', SocialUserDataSchema)
+  throw new Error('No connection supplied, set options.connection in plugin definition') unless options?.connection?
+  SocialUserData = options.connection.model('SocialUserData', SocialUserDataSchema)
 
   socialReq = new SocialReq()
   socialReq
