@@ -1,8 +1,9 @@
-mongoose = require('mongoose')
 SocialReq = require('social-request')
 async = require('async')
 
 module.exports = (schema, options) ->
+  throw new Error('No mongoose instance supplied, set options.mongoose in plugin definition') unless options?.mongoose?
+  mongoose = options.mongoose
   SocialUserDataSchema = new mongoose.Schema
     _user: 
       type: mongoose.Schema.Types.ObjectId
@@ -19,8 +20,7 @@ module.exports = (schema, options) ->
     googleplus:
       userData: {}
       contacts: Array
-  throw new Error('No connection supplied, set options.connection in plugin definition') unless options?.connection?
-  SocialUserData = options.connection.model('SocialUserData', SocialUserDataSchema)
+  SocialUserData = mongoose.model('SocialUserData', SocialUserDataSchema)
 
   socialReq = new SocialReq()
   socialReq

@@ -27,9 +27,10 @@ describe 'Mongoose Social Plugin', () ->
       linkedin: 
         apiKey: testConfig.linkedin.apiKey
         secretKey: testConfig.linkedin.secretKey
-      connection: mongoose.connection
+      mongoose: mongoose
     User = mongoose.model('User', UserSchema)
     SocialUserData = mongoose.model('SocialUserData')
+    console.log SocialUserData
     SocialUserData.remove done
 
   beforeEach (done) ->
