@@ -20,7 +20,10 @@ module.exports = (schema, options) ->
     googleplus:
       userData: {}
       contacts: Array
-  SocialUserData = mongoose.model('SocialUserData', SocialUserDataSchema)
+  if mongoose.models.SocialUserData
+    SocialUserData = mongoose.models.SocialUserData
+  else
+    SocialUserData = mongoose.model('SocialUserData', SocialUserDataSchema)
 
   socialReq = new SocialReq()
   socialReq
