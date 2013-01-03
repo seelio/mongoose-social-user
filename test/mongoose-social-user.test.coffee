@@ -14,6 +14,7 @@ describe 'Mongoose Social Plugin', () ->
     #   cb(null, 'results')
     UserSchema = new mongoose.Schema 
       name: String
+      email: String
     UserSchema.plugin require('../index.js'), 
       google: 
         clientId: testConfig.google.clientId
@@ -30,7 +31,6 @@ describe 'Mongoose Social Plugin', () ->
       mongoose: mongoose
     User = mongoose.model('User', UserSchema)
     SocialUserData = mongoose.model('SocialUserData')
-    console.log SocialUserData
     SocialUserData.remove done
 
   beforeEach (done) ->
@@ -59,6 +59,9 @@ describe 'Mongoose Social Plugin', () ->
                   id: '198437102109342'
                   username: 'fbusername'
                   aT: 'iamasweetaccesstoken'
+            ,
+              _id: '000000000000000000000006'
+              email: 'dude@gmail.com'
           ], cb
       ,
         (cb) ->
@@ -238,6 +241,15 @@ describe 'Mongoose Social Plugin', () ->
               expect(user.auth.google.id).to.be '114277323590337190780'
               expect(user.auth.google.aT).to.be 'ya29.AHES6ZTbGtzk9pWGtw33ypFcf7B7RYn6zowhe1htQ9pFwnA'
               expect(user.auth.google.rT).to.be 'iamarefreshtoken'
+              done()
+        it 'should link the social account to an existing user which shares that email address', (done) ->
+          userAttributes.email = 'dude@gmail.com'
+          accessTokExtra.refresh_token = null
+          User.findOrCreateUser('google').bind(promiseScope)(session, accessToken, accessTokExtra, userAttributes)
+            .then (user) ->
+              expect(session.newUser).not.to.be.ok()
+              expect(user.auth.google.id).to.be '111111111111111111'
+              expect(user.id).to.be '000000000000000000000006'
               done()
       describe 'if there is a user in the session', () ->
         beforeEach () ->
