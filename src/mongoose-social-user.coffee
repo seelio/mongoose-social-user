@@ -101,6 +101,9 @@ module.exports = (schema, options) ->
           return done(err ? new Error('Another user has already linked this account'))  if err? or (occupyingUser and occupyingUser.id isnt params.session.auth.userId)
           upsertSocialIdToDatabase user, false, done
     else
+      upsertNewUser = () ->
+        self.create {}, (err, user) ->
+          upsertSocialIdToDatabase user, true, done
       @findOne userParams, (err, user) ->
         return done(err, null)  if err
         return upsertSocialIdToDatabase user, false, done if user?
@@ -110,7 +113,9 @@ module.exports = (schema, options) ->
           return done err if err
           return upsertSocialIdToDatabase user, false, done if user?
           self.create {}, (err, user) ->
-            upsertSocialIdToDatabase user, true, done
+            return done err if err
+            return upsertSocialIdToDatabase user, false, done if user?
+            return upsertNewUser()
   schema.statics.findOrCreateUser = (service) ->
     self = @
     switch service

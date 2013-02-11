@@ -88,6 +88,9 @@
                     aT: 'iamasweetaccesstoken'
                   }
                 }
+              }, {
+                _id: '000000000000000000000006',
+                email: 'dude@gmail.com'
               }
             ], cb);
           }, function(cb) {
@@ -361,7 +364,10 @@
           });
           return it('should return pre-existing user if pre-existing email connected', function(done) {
             userAttributes.email = 'google@gmail.com';
+            accessTokExtra.refresh_token = null;
             return User.findOrCreateUser('google').bind(promiseScope)(session, accessToken, accessTokExtra, userAttributes).then(function(user) {
+              expect(session.newUser).not.to.be.ok();
+              expect(user.auth.google.id).to.be('111111111111111111');
               expect(user.id).to.be('000000000000000000000003');
               return done();
             });
@@ -489,6 +495,9 @@
           return it('should return pre-existing user if pre-existing email connected', function(done) {
             fbUserMetaData.email = 'facebook@facebook.com';
             return User.findOrCreateUser('facebook').bind(promiseScope)(session, accessToken, accessTokExtra, fbUserMetaData).then(function(user) {
+              expect(session.newUser).not.to.be.ok();
+              expect(user.auth.facebook.id).to.be('2209612');
+              expect(user.auth.facebook.aT).to.be('AAAHOA4xnZBxMBAK4ZCI2PjnhqlMLhMd0aZA9lHpgPMwFN7rw6lOV5HBditZB5Hch2rFIdsNrQOR08qcR2ZAeZA5uAVzK2NNgQZD');
               expect(user.id).to.be('000000000000000000000005');
               return done();
             });

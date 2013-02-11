@@ -62,6 +62,9 @@ describe 'Mongoose Social Plugin', () ->
                   id: '198437102109342'
                   username: 'fbusername'
                   aT: 'iamasweetaccesstoken'
+            ,
+              _id: '000000000000000000000006'
+              email: 'dude@gmail.com'
           ], cb
       ,
         (cb) ->
@@ -244,8 +247,11 @@ describe 'Mongoose Social Plugin', () ->
               done()
         it 'should return pre-existing user if pre-existing email connected', (done) ->
           userAttributes.email = 'google@gmail.com'
+          accessTokExtra.refresh_token = null
           User.findOrCreateUser('google').bind(promiseScope)(session, accessToken, accessTokExtra, userAttributes)
             .then (user) ->
+              expect(session.newUser).not.to.be.ok()
+              expect(user.auth.google.id).to.be '111111111111111111'
               expect(user.id).to.be '000000000000000000000003'
               done()
       describe 'if there is a user in the session', () ->
@@ -345,7 +351,10 @@ describe 'Mongoose Social Plugin', () ->
           fbUserMetaData.email = 'facebook@facebook.com'
           User.findOrCreateUser('facebook').bind(promiseScope)(session, accessToken, accessTokExtra, fbUserMetaData)
             .then (user) ->
-              expect(user.id).to.be('000000000000000000000005')
+              expect(session.newUser).not.to.be.ok()
+              expect(user.auth.facebook.id).to.be '2209612'
+              expect(user.auth.facebook.aT).to.be 'AAAHOA4xnZBxMBAK4ZCI2PjnhqlMLhMd0aZA9lHpgPMwFN7rw6lOV5HBditZB5Hch2rFIdsNrQOR08qcR2ZAeZA5uAVzK2NNgQZD'
+              expect(user.id).to.be '000000000000000000000005'
               done()
       describe 'if there is a user in the session', () ->
         beforeEach () ->
