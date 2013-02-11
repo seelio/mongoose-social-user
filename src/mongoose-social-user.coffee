@@ -104,8 +104,13 @@ module.exports = (schema, options) ->
       @findOne userParams, (err, user) ->
         return done(err, null)  if err
         return upsertSocialIdToDatabase user, false, done if user?
-        self.create {}, (err, user) ->
-          upsertSocialIdToDatabase user, true, done
+        self.findOne
+          'email': params.data.email
+        , (err, user) ->
+          return done err if err
+          return upsertSocialIdToDatabase user, false, done if user?
+          self.create {}, (err, user) ->
+            upsertSocialIdToDatabase user, true, done
   schema.statics.findOrCreateUser = (service) ->
     self = @
     switch service

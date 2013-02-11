@@ -1,7 +1,14 @@
 {spawn, exec} = require 'child_process'
 
 build = (watch) ->
-  options = ['-c', '-o', 'lib', 'src']
+  folders = ['test/', {s: 'src/', o: 'lib/'}]
+  buildFolder folder, watch for folder in folders
+
+buildFolder = (folder, watch) ->
+  if typeof folder is 'string'
+    options = ['-c', folder]
+  else
+    options = ['-c', '-o', folder.o, folder.s]
   if watch is true
     options[0] = '-cw'
   watcher = spawn 'coffee', options
@@ -9,7 +16,7 @@ build = (watch) ->
     console.log data.toString().trim()
   watcher.stderr.on 'data', (data) ->
     console.log data.toString().trim()
-    watcher = spawn 'coffee.cmd', options
+    watcher = spawn 'node_modules\\.bin\\coffee.cmd', options
     watcher.stdout.on 'data', (data) ->
       console.log data.toString().trim()
     watcher.stderr.on 'data', (data) ->

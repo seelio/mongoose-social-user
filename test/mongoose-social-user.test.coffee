@@ -1,6 +1,7 @@
 expect = require 'expect.js'
 sinon = require 'sinon'
 mongoose = require 'mongoose'
+require('coffee-script')
 testConfig = require '../testconfig.coffee'
 async = require 'async'
 SocialReq = require('social-request')
@@ -14,6 +15,7 @@ describe 'Mongoose Social Plugin', () ->
     #   cb(null, 'results')
     UserSchema = new mongoose.Schema 
       name: String
+      email: String
     UserSchema.plugin require('../index.js'), 
       google: 
         clientId: testConfig.google.clientId
@@ -30,7 +32,6 @@ describe 'Mongoose Social Plugin', () ->
       mongoose: mongoose
     User = mongoose.model('User', UserSchema)
     SocialUserData = mongoose.model('SocialUserData')
-    console.log SocialUserData
     SocialUserData.remove done
 
   beforeEach (done) ->
@@ -47,6 +48,7 @@ describe 'Mongoose Social Plugin', () ->
               _id: '000000000000000000000004'
             ,
               _id: '000000000000000000000003'
+              email: 'google@gmail.com'
               auth:
                 google:
                   id: '114277323590337190780'
@@ -54,6 +56,7 @@ describe 'Mongoose Social Plugin', () ->
                   rT: 'iamarefreshtoken'
             ,
               _id: '000000000000000000000005'
+              email: 'facebook@facebook.com'
               auth:
                 facebook:
                   id: '198437102109342'
@@ -239,6 +242,12 @@ describe 'Mongoose Social Plugin', () ->
               expect(user.auth.google.aT).to.be 'ya29.AHES6ZTbGtzk9pWGtw33ypFcf7B7RYn6zowhe1htQ9pFwnA'
               expect(user.auth.google.rT).to.be 'iamarefreshtoken'
               done()
+        it 'should return pre-existing user if pre-existing email connected', (done) ->
+          userAttributes.email = 'google@gmail.com'
+          User.findOrCreateUser('google').bind(promiseScope)(session, accessToken, accessTokExtra, userAttributes)
+            .then (user) ->
+              expect(user.id).to.be '000000000000000000000003'
+              done()
       describe 'if there is a user in the session', () ->
         beforeEach () ->
           session =
@@ -332,6 +341,12 @@ describe 'Mongoose Social Plugin', () ->
                 expect(socialUserData.facebook.userData.first_name).to.be 'Will'
                 expect(socialUserData.facebook.userData.last_name).to.be 'Stone'
                 done()
+        it 'should return pre-existing user if pre-existing email connected', (done) ->
+          fbUserMetaData.email = 'facebook@facebook.com'
+          User.findOrCreateUser('facebook').bind(promiseScope)(session, accessToken, accessTokExtra, fbUserMetaData)
+            .then (user) ->
+              expect(user.id).to.be('000000000000000000000005')
+              done()
       describe 'if there is a user in the session', () ->
         beforeEach () ->
           session =
