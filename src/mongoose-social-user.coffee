@@ -112,10 +112,7 @@ module.exports = (schema, options) ->
         , (err, user) ->
           return done err if err
           return upsertSocialIdToDatabase user, false, done if user?
-          self.create {}, (err, user) ->
-            return done err if err
-            return upsertSocialIdToDatabase user, false, done if user?
-            return upsertNewUser()
+          return upsertNewUser()
   schema.statics.findOrCreateUser = (service) ->
     self = @
     switch service
