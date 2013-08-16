@@ -228,7 +228,7 @@ module.exports = (schema, options) ->
       async.waterfall [ 
         (cb) -> SocialUserData.findOne {_user: self._id}, cb
       , (socialUserData, cb) ->
-        return socialUserData.create {_user: self._id}, cb  unless socialUserData?
+        return SocialUserData.create {_user: self._id}, cb  unless socialUserData?
         cb null, socialUserData
       ], (err, socialUserData) ->
         cb err, results, socialUserData
