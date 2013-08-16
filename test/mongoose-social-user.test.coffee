@@ -2,7 +2,7 @@ expect = require 'expect.js'
 sinon = require 'sinon'
 mongoose = require 'mongoose'
 require('coffee-script')
-testConfig = require '../testconfig.coffee'
+testConfig = require '../testconfig'
 async = require 'async'
 SocialReq = require('social-request')
 
@@ -125,12 +125,21 @@ describe 'Mongoose Social Plugin', () ->
               expect(user.auth.google.rT).to.be.ok()
               expect(user.auth.google.rT).to.be oldRefreshToken
               done()
-        it 'should fail correctly if there is no access token', (done) ->
+        it 'should fail correctly if there is no refresh token', (done) ->
           User.findById '000000000000000000000003', (err, user) ->
             throw err if err
             user.auth.google.rT = null
             user._refreshAccessToken 'google', (err, user) ->
-              expect(err.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
+              expect(err.message).to.be.ok()
+              expect(err.code).to.be 400
+              done()
+        it 'should send error information if refresh token is invalid', (done) ->
+          User.findById '000000000000000000000003', (err, user) ->
+            throw err if err
+            user.auth.google.rT = 'failfailfail'
+            user._refreshAccessToken 'google', (err, user) ->
+              expect(err.message).to.be.ok()
+              expect(err.code).to.be 400
               done()
     it 'should refresh an access token for oauth for a given service'
 
@@ -162,13 +171,15 @@ describe 'Mongoose Social Plugin', () ->
           user.auth.google.aT = 'asdfasdfasdf'
           userWithABadAccessToken = user;
           done();
-      it 'should try to refresh the access token with refresh token and refresh again', (done) ->
+      it 'should try to refresh the access token with refresh token and request again', (done) ->
         @timeout(10000);
         userWithABadAccessToken.auth.google.rT = testConfig.google.refresh_token
-        userWithABadAccessToken.getSocial {contacts: ['google'], details: ['google', 'googleplus']}, (err, results) ->
+        userWithABadAccessToken.auth.facebook.aT = testConfig.facebook.access_token
+        userWithABadAccessToken.getSocial {contacts: ['google', 'facebook'], details: ['google', 'googleplus']}, (err, results) ->
           throw err  if err
           expect(results.contacts.google.length).to.be.greaterThan(0)
-          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google'], details: ['google', 'googleplus']}).to.be.ok();
+          expect(results.contacts.facebook.length).to.be.greaterThan(0)
+          expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google', 'facebook'], details: ['google', 'googleplus']}).to.be.ok();
           expect(results.contacts.google.error).to.not.be.ok();
           SocialUserData.findOne {_user: '000000000000000000000005'}, (err, socialUserData) ->
             throw err  if err
@@ -176,15 +187,33 @@ describe 'Mongoose Social Plugin', () ->
             expect(socialUserData.google.userData.name).to.be.ok()
             expect(socialUserData.google.userData.given_name).to.be.ok()
             expect(socialUserData.googleplus.userData.name.givenName).to.be.ok()
+            expect(socialUserData.facebook.contacts.length).to.be.greaterThan(0)
             done();
+      it 'should fail if service is not refreshable', (done) ->
+        @timeout(10000);
+        delete userWithABadAccessToken.auth.google.aT
+        userWithABadAccessToken.auth.facebook.aT = 'wrongwrong'
+        userWithABadAccessToken.getSocial {contacts: ['facebook']}, (err, results) ->
+          throw err  if err
+          expect(results.contacts.facebook.error.message).to.be.ok()
+          done()
       it 'should pass errors without a refresh token', (done) ->
         @timeout(10000);
-        userWithABadAccessToken.auth.google.rT = null
+        delete userWithABadAccessToken.auth.google.rT
         userWithABadAccessToken.getSocial {contacts: ['google', 'facebook'], details: ['google']}, (err, results) ->
           throw err if err
           expect(results.contacts.facebook.error.message).to.be.ok()
-          expect(results.contacts.google.error.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
-          expect(results.details.google.error.message).to.be 'No refresh token for service google, user needs to be redirected to authentication screen'
+          expect(results.contacts.google.error.message).to.be.ok()
+          expect(results.details.google.error.message).to.be.ok()
+          done();
+      it 'should pass errors with a bad refresh token', (done) ->
+        @timeout(10000);
+        userWithABadAccessToken.auth.google.rT = 'failfailfail'
+        userWithABadAccessToken.getSocial {contacts: ['google', 'facebook'], details: ['google']}, (err, results) ->
+          throw err if err
+          expect(results.contacts.facebook.error.message).to.be.ok()
+          expect(results.contacts.google.error.message).to.be.ok()
+          expect(results.details.google.error.message).to.be.ok()
           done();
 
   describe '.findOrCreateUser', () ->
@@ -308,7 +337,7 @@ describe 'Mongoose Social Plugin', () ->
         session = {}
         done()
       describe 'if there is no user in the session', () ->
-        it 'should create a user from everyAuth', (done) ->
+        it 'should create a new user from everyAuth if this user does not previously exist in database', (done) ->
           User.findOrCreateUser('facebook').bind(promiseScope)(session, accessToken, accessTokExtra, fbUserMetaData)
             .then (user) ->
               expect(session.authUserData.first_name).to.be.ok()
@@ -359,8 +388,8 @@ describe 'Mongoose Social Plugin', () ->
       describe 'if there is a user in the session', () ->
         beforeEach () ->
           session =
-              auth:
-                userId: '000000000000000000000004'
+            auth:
+              userId: '000000000000000000000004'
         it 'should link a facebook id', (done) ->
           User.findOrCreateUser('facebook').bind(promiseScope)(session, accessToken, accessTokExtra, fbUserMetaData)
             .then (user) ->
@@ -372,6 +401,13 @@ describe 'Mongoose Social Plugin', () ->
                 expect(user.id).to.be '000000000000000000000004'
                 expect(user.auth.facebook.username).to.be('daviddjsa')
                 expect(user.auth.facebook.id).to.be('2209612')
+              done()
+        it 'should fail if user in session doesn\'t exist (how this would happen I have no idea)', (done) ->
+          session.auth.userId = '999999999999999999999999'
+          User.findOrCreateUser('facebook').bind(promiseScope)(session, accessToken, accessTokExtra, fbUserMetaData)
+            .then (err) ->
+              expect(err).to.be.ok()
+              expect(err.length).to.be(1)
               done()
         it 'should not link a currently used facebook id', (done) ->
           fbUserMetaData.id = '198437102109342'

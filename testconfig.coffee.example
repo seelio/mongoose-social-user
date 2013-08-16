@@ -1,9 +1,9 @@
 module.exports = 
   google:
-    consumerKey: 'your google consumerKey'
-    consumerSecret: 'your google consumerSecret'
+    clientId: 'your google consumerKey'
+    clientSecret: 'your google consumerSecret'
     access_token: '...'
-    access_token_secret: '...'
+    refresh_token: '...'
   facebook:
     appId: '...'
     appSecret: '...'

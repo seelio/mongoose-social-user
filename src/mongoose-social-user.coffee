@@ -58,61 +58,59 @@ module.exports = (schema, options) ->
   _findOrCreateUser = (params, done) ->
     return done(new Error("couldn't log you in"))  if not params.service or not params.session or not params.data
     self = @
-    upsertSocialIdToDatabase = (user, newUser, done) ->
-      user.auth[params.service].id = params.data.id
-      user.auth[params.service].username = params.data.username
-      user.auth[params.service].createdAt = new Date() if newUser
-      user.auth[params.service].aT = params.data.aT
-      user.auth[params.service].rT = params.data.rT if params.data.rT?
-      user.auth[params.service].aTS = params.data.aTS
-      async.waterfall [
-        (cb) ->
-          SocialUserData.findOne {_user: user._id}, cb
-      ,
-        (socialUserData, cb) ->
-          if not socialUserData?
-            socialUserData = new SocialUserData
-              _user: user._id
-            socialUserData.save cb
-          else
-            cb null, socialUserData
-      ], (err, socialUserData) ->
-        return done err if err
-        if not socialUserData[params.service]?.userData?
-          socialUserData[params.service].userData = params.data
-        else 
-          for param of params.data
-            socialUserData[params.service].userData[param] = params.data[param]
-          socialUserData.markModified(params.service + '.userData')
+    async.waterfall [ (cb) ->
+      userFindParams = {}
+      userFindParams['auth.' + params.service + '.id'] = params.data.id
+      if params.session?.auth?.userId?
         async.parallel
-          user: (cb) ->
-            user.save cb
-          socialUserData: (cb) ->
-            socialUserData.save cb
+          user: (cb) -> self.findById params.session.auth.userId, cb
+          occupyingUser: (cb) -> self.findOne userFindParams, cb
         , (err, results) ->
-          done err, user, newUser
-    userParams = {}
-    userParams['auth.' + params.service + '.id'] = params.data.id
-    if params.session?.auth?.userId?
-      @findById params.session.auth.userId, (err, user) ->
-        return done(err, null) if err
-        return done(null) if not user?
-        self.findOne userParams, (err, occupyingUser) ->
-          return done(err ? new Error('Another user has already linked this account'))  if err? or (occupyingUser and occupyingUser.id isnt params.session.auth.userId)
-          upsertSocialIdToDatabase user, false, done
-    else
-      upsertNewUser = () ->
-        self.create {}, (err, user) ->
-          upsertSocialIdToDatabase user, true, done
-      @findOne userParams, (err, user) ->
-        return done(err, null)  if err
-        return upsertSocialIdToDatabase user, false, done if user?
-        self.findOne
-          'email': params.data.email
-        , (err, user) ->
-          return done err if err
-          return upsertSocialIdToDatabase user, false, done if user?
-          return upsertNewUser()
+          return cb(new Error('No user is linked to the user in the session. How is this person logged in?')) if not results.user?
+          return cb(new Error('Another user has already linked this account'))  if (results.occupyingUser and results.occupyingUser.id isnt params.session.auth.userId)
+          cb err, results.user, false
+      else
+        async.waterfall [ (cb) ->
+          self.findOne userFindParams, cb
+        , (user, cb) ->
+          return cb null, user  if user?
+          return cb null, null  unless params.data.email?
+          self.findOne { 'email': params.data.email }, (err, user) ->
+            return cb err, (if user? then user else null)
+        , (user, cb) ->
+          return cb null, user, false if user?
+          self.create {}, (err, user) ->
+            cb err, user, true
+        ], cb
+    , upsertToDatabase = (user, newUser, cb) ->
+      async.parallel
+        user: (cb) ->
+          user.auth[params.service].id = params.data.id
+          user.auth[params.service].username = params.data.username
+          user.auth[params.service].createdAt = new Date() if newUser
+          user.auth[params.service].aT = params.data.aT
+          user.auth[params.service].rT = params.data.rT if params.data.rT?
+          user.auth[params.service].aTS = params.data.aTS if params.data.aTS?
+          user.save cb
+        socialUserData: (cb) ->
+          async.waterfall [ (cb) ->
+            SocialUserData.findOne {_user: user._id}, cb
+          , (socialUserData, cb) ->
+            return cb null, socialUserData  if socialUserData?
+            SocialUserData.create { _user: user._id }, (err, socialUserData) ->
+              cb null, socialUserData
+          , (socialUserData, cb) ->
+            unless socialUserData[params.service]?.userData?
+              socialUserData[params.service].userData = params.data
+            else 
+              for param of params.data
+                socialUserData[params.service].userData[param] = params.data[param]
+              socialUserData.markModified(params.service + '.userData')
+            socialUserData.save cb
+          ], cb
+      , (err, results) ->
+        cb null, user, newUser
+    ], done
   schema.statics.findOrCreateUser = (service) ->
     self = @
     switch service
@@ -186,113 +184,95 @@ module.exports = (schema, options) ->
 
   schema.methods.getSocial = (params, done) ->
     self = @
-    self._socialReqGet params, (err, results) ->
-      return done err if err
-      processingFunctions = []
-      secondTry = false
-      secondTryParams = {}
+    async.waterfall [ firstTry = (cb) ->
+      self._socialReqGet params, cb
+    , attemptSecondTriesIfNecessary = (results, cb) ->
+      firstTryHasFailures = false
       secondTryServices = []
+      socialGetParams = {}
       for requestType of results
         for service of results[requestType]
           if results[requestType][service].error?
-            secondTry = true
-            secondTryParams[requestType] = [] unless secondTryParams[requestType]?
-            secondTryParams[requestType].push service 
-            secondTryServices.push service if secondTryServices.indexOf(service) is -1
-      removeServiceFromSecondTryParams = (service) ->
-        for requestType of secondTryParams
-          i = secondTryParams[requestType].indexOf service
-          secondTryParams[requestType].splice i,1 if i isnt -1
-          delete secondTryParams[requestType] if Object.keys(secondTryParams[requestType]).length is 0
-      setErrorsForService = (service, err) ->
-        for requestType of results
-          for resultService of results[requestType] 
-            if resultService is service
-              results[requestType][service].error = err
-      async.waterfall [
-        (cb) ->
-          return cb() if not secondTry
-          async.forEach secondTryServices, (service, cb) ->
-            if service is 'google'
-              self._refreshAccessToken service, (err, user) ->
-                if err
-                  removeServiceFromSecondTryParams service
-                  setErrorsForService service, err
-                cb()
-            else if service is 'googleplus'
-              self._refreshAccessToken 'google', (err, user) ->
-                if err
-                  removeServiceFromSecondTryParams service
-                  setErrorsForService service, err
-                cb()
-            else if service is 'facebook'
-              removeServiceFromSecondTryParams service
+            firstTryHasFailures = true
+            secondTryServices.push service  if secondTryServices.indexOf(service) is -1
+            socialGetParams[requestType] = []  unless socialGetParams[requestType]?
+            socialGetParams[requestType].push service
+      return cb(null, results) unless firstTryHasFailures
+
+      async.waterfall [ (cb) ->
+        removeServiceFromSocialGetParams = (service) ->
+          for requestType of socialGetParams
+            i = socialGetParams[requestType].indexOf service
+            socialGetParams[requestType].splice i, 1  if i isnt -1
+            delete socialGetParams[requestType] if socialGetParams[requestType] is 0
+        async.forEach secondTryServices, attemptToRefreshAccessToken = (service, cb) ->
+          if service is 'google' or service is 'googleplus'
+            self._refreshAccessToken 'google', (err, user) ->
+              removeServiceFromSocialGetParams service  if err?
               cb()
-            else
-              removeServiceFromSecondTryParams service
-              cb()
-          , (err) ->
-            return cb(err) if err
-            return cb() if Object.keys(secondTryParams).length is 0
-            self._socialReqGet secondTryParams, (err, secondResults) ->
-              return cb(err) if err
-              for requestType of secondResults
-                for service of secondResults[requestType]
-                  results[requestType][service] = secondResults[requestType][service]
-              cb()
-      ], (err) ->
-        return done err if err
-        async.waterfall [
-          (cb) ->
-            SocialUserData.findOne {_user: self._id}, cb
-        ,
-          (socialUserData, cb) ->
-            if not socialUserData?
-              socialUserData = new SocialUserData
-                _user: self._id
-              socialUserData.save cb
-            else
-              cb null, socialUserData
-        ], (err, socialUserData) ->
-          return done err if err
-          for requestType of results
-            switch requestType
-              when 'contacts'
-                for service of results.contacts
-                  unless results.contacts[service].error?
-                    processingFunctions.push (cb) ->
-                      async.filter results.contacts[service], (contact, cb) ->
-                        switch service
-                          when 'google'
-                            cb contact.email?
-                          else
-                            cb true
-                      , (contacts) ->
-                        async.sortBy contacts, (contact, cb) ->
-                          cb null, contact.entry.gd$name?.gd$familyName
-                        , (err, contacts) ->
-                          done err  if err
-                          socialUserData[service] = {} unless socialUserData[service]
-                          socialUserData[service].contacts = results.contacts[service] = contacts
-                          cb()
-              when 'details'
-                for service of results.details
-                  unless results.details[service].error?
-                    if not socialUserData[service].userData?
-                      socialUserData[service].userData = results.details[service]
-                    else 
-                      for param of results.details[service]
-                        socialUserData[service].userData[param] = results.details[service][param]
-                      socialUserData.markModified(service + '.userData')
-          async.parallel processingFunctions, (err, processingResults) ->
-            return done err  if err
-            async.parallel
-              user: (cb) ->
-                self.save cb
-              socialUserData: (cb) ->
-                socialUserData.save cb
-            , (err, models) ->
-              done err, results
+          else
+            removeServiceFromSocialGetParams service
+            cb()
+        , cb  
+      , attemptSocialReq = (cb) ->
+        return cb() if Object.keys(socialGetParams).length is 0
+        self._socialReqGet socialGetParams, cb
+      , mergeResults = (secondResults, cb) ->
+        return secondResults null, results  if typeof secondResults is 'function'
+        for requestType of secondResults
+          for service of secondResults[requestType]
+            results[requestType][service] = secondResults[requestType][service]
+        cb(null, results)
+      ], cb        
+    , getSocialUserData = (results, cb) ->
+      async.waterfall [ 
+        (cb) -> SocialUserData.findOne {_user: self._id}, cb
+      , (socialUserData, cb) ->
+        return socialUserData.create {_user: self._id}, cb  unless socialUserData?
+        cb null, socialUserData
+      ], (err, socialUserData) ->
+        cb err, results, socialUserData
+    , processResults = (results, socialUserData, cb) ->
+      async.parallel
+        processContacts: (cb) ->
+          return cb()  unless results.contacts?
+          processingFunctions = []
+          Object.keys(results.contacts).forEach (service, i, keys) ->
+            return  if results.contacts[service].error?
+            processingFunctions.push (cb) ->
+              async.filter results.contacts[service], (contact, cb) ->
+                return cb contact.email?  if service is 'google'
+                cb true
+              , (contacts) ->
+                async.sortBy contacts, (contact, cb) ->
+                  return cb null, contact.entry.gd$name?.gd$familyName  if service is 'google'
+                  return cb null, contact.name  if service is 'facebook'
+                  cb null, null
+                , (err, contacts) ->
+                  done err  if err?
+                  socialUserData[service] = {} unless socialUserData[service]
+                  socialUserData[service].contacts = results.contacts[service] = contacts
+                  cb()
+          async.parallel processingFunctions, cb
+        processDetails: (cb) ->
+          return cb()  unless results.details?
+          Object.keys(results.details).forEach (service, i, keys) ->
+            return  if results.details[service].error?
+            return socialUserData[service].userData = results.details[service]  unless socialUserData[service].userData?
+            for param of results.details[service]
+              socialUserData[service].userData[param] = results.details[service][param]
+            socialUserData.markModified(service + '.userData')
+          cb()
+      , (err, processingResults) ->
+        return cb err, results, socialUserData
+    , cacheSocialUserData = (results, socialUserData, cb) ->
+      async.parallel
+        user: (cb) -> self.save cb
+        socialUserData: (cb) -> socialUserData.save cb
+      , (err, models) ->
+        cb err, results
+    ], done
+            
 
   ###
   schema.on 'init', (model) ->
@@ -307,13 +287,16 @@ module.exports = (schema, options) ->
             access_token_secret: user.auth.google.aTS###
 
   schema.methods._invalidateAccessToken = (service, done) ->
-    return done null, @ if not @auth[service]?
+    return done null, @ unless @auth[service]?
     @auth[service].aT = undefined
     @auth[service].aTS = undefined
     @save done
   schema.methods._refreshAccessToken = (service, done) ->
-    return done null, @ if not @auth[service]?
-    return done(new Error('No refresh token for service ' + service + ', user needs to be redirected to authentication screen')) if not @auth[service].rT?
+    return done null, @ unless @auth[service]?
+    unless @auth[service].rT?
+      return done
+        message: 'No refresh token for service ' + service + ', user needs to reauthenticate'
+        code: 400
     self = @
     socialReq.getTokens (id, cb) ->
       cb
@@ -325,9 +308,9 @@ module.exports = (schema, options) ->
         googleplus: 
           access_token: self.auth.google.aT
     socialReq.get @.id, {tokens: [service]}, (err, results) ->
-      done (err or new Error 'Token refresh failed for some reason') if err or not results.tokens[service]?.access_token?
+      return done err if err?
+      return done results.tokens[service]?.error  if results.tokens[service]?.error
       self.auth.google.aT = results.tokens[service].access_token
       self.save done
   
-
   return

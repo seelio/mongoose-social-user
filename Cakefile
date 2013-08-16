@@ -1,7 +1,7 @@
 {spawn, exec} = require 'child_process'
 
 build = (watch) ->
-  folders = ['test/', {s: 'src/', o: 'lib/'}]
+  folders = ['test/', {s: 'src/', o: 'lib/'}, 'testConfig.coffee']
   buildFolder folder, watch for folder in folders
 
 buildFolder = (folder, watch) ->
@@ -21,9 +21,15 @@ buildFolder = (folder, watch) ->
       console.log data.toString().trim()
     watcher.stderr.on 'data', (data) ->
       console.log data.toString().trim()
+  watcher.on 'error', (error) ->
+    watcher = spawn 'node_modules\\.bin\\coffee.cmd', options
+    watcher.stdout.on 'data', (data) ->
+      console.log data.toString().trim()
+    watcher.stderr.on 'data', (data) ->
+      console.log data.toString().trim()
 
 task 'build', 'build the project', (watch) ->
-  build watch
+  build false
 
 task 'watch', 'watch the libs and controllers folders', () ->
   build true
