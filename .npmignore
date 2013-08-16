@@ -1,3 +1,6 @@
+test
+testconfig.coffee.example
 testconfig.coffee
 testconfig.js
 *.coffee
+Cakefile
