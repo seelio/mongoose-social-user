@@ -251,7 +251,7 @@ module.exports = (schema, options) ->
                 , (err, contacts) ->
                   done err  if err?
                   socialUserData[service] = {} unless socialUserData[service]
-                  socialUserData[service].contacts = results.contacts[service] = contacts
+                  socialUserData[service].contacts = results.contacts[service] = JSON.stringify contacts
                   cb()
           async.parallel processingFunctions, cb
         processDetails: (cb) ->
