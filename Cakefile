@@ -1,7 +1,7 @@
 {spawn, exec} = require 'child_process'
 
 build = (watch) ->
-  folders = ['test/', {s: 'src/', o: 'lib/'}, 'testConfig.coffee']
+  folders = ['test/', {s: 'src/', o: 'lib/'}, 'testconfig.coffee']
   buildFolder folder, watch for folder in folders
 
 buildFolder = (folder, watch) ->

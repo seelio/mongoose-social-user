@@ -10,16 +10,16 @@ module.exports = (schema, options) ->
       ref: options.userModel or 'User'
     facebook: 
       userData: {}
-      contacts: Array
+      contacts: String
     twitter:
       userData: {}
-      contacts: Array
+      contacts: String
     google:
       userData: {}
-      contacts: Array
+      contacts: String
     googleplus:
       userData: {}
-      contacts: Array
+      contacts: String
   if mongoose.models.SocialUserData
     SocialUserData = mongoose.models.SocialUserData
   else
@@ -95,6 +95,15 @@ module.exports = (schema, options) ->
         socialUserData: (cb) ->
           async.waterfall [ (cb) ->
             SocialUserData.findOne {_user: user._id}, cb
+          , (socialUserData, cb) ->
+            return cb null, null unless socialUserData?
+            for service, serviceData in socialUserData
+              if typeof serviceData.contacts is 'string'
+                try
+                  socialUserData[service].contacts = JSON.parse serviceData.contacts
+                catch
+                  console.error _error
+            cb null, socialUserData
           , (socialUserData, cb) ->
             return cb null, socialUserData  if socialUserData?
             SocialUserData.create { _user: user._id }, (err, socialUserData) ->
@@ -272,20 +281,6 @@ module.exports = (schema, options) ->
       , (err, models) ->
         cb err, results
     ], done
-            
-
-  ###
-  schema.on 'init', (model) ->
-    socialReq.getTokens (id, cb) ->
-      model.findById id, (err, user) ->
-        return cb(err || new Error 'User does not exist') if err? or not user?
-        cb
-          facebook:
-            access_token: user.auth.facebook.aT
-          google: 
-            access_token: user.auth.google.aT
-            access_token_secret: user.auth.google.aTS###
-
   schema.methods._invalidateAccessToken = (service, done) ->
     return done null, @ unless @auth[service]?
     @auth[service].aT = undefined
@@ -294,9 +289,9 @@ module.exports = (schema, options) ->
   schema.methods._refreshAccessToken = (service, done) ->
     return done null, @ unless @auth[service]?
     unless @auth[service].rT?
-      return done
-        message: 'No refresh token for service ' + service + ', user needs to reauthenticate'
-        code: 400
+      err = new Error "No refresh token for service #{service}, user needs to reauthenticate"
+      err.code = 400
+      return done err
     self = @
     socialReq.getTokens (id, cb) ->
       cb
@@ -309,7 +304,10 @@ module.exports = (schema, options) ->
           access_token: self.auth.google.aT
     socialReq.get @.id, {tokens: [service]}, (err, results) ->
       return done err if err?
-      return done results.tokens[service]?.error  if results.tokens[service]?.error
+      if results.tokens[service]?.error
+        err = new Error results.tokens[service]?.error.message
+        err.code = results.tokens[service]?.error.code
+        return done err
       self.auth.google.aT = results.tokens[service].access_token
       self.save done
   

@@ -12,23 +12,22 @@ describe 'Mongoose Social Plugin', () ->
     mongoose.connect('mongodb://localhost/mongoose-social-user-testing')
     socialReq = new SocialReq();
     socialGetSpy = sinon.spy SocialReq.prototype, 'get', (params, cb) ->
-    #   cb(null, 'results')
-    UserSchema = new mongoose.Schema 
+    UserSchema = new mongoose.Schema
       name: String
       email: String
-    UserSchema.plugin require('../index.js'), 
-      google: 
+    UserSchema.plugin require('../index.js'),
+      google:
         clientId: testConfig.google.clientId
         clientSecret: testConfig.google.clientSecret
-      facebook: 
+      facebook:
         appId: testConfig.facebook.appId
         appSecret: testConfig.facebook.appSecret
-      twitter: 
-        consumerKey: testConfig.twitter.consumerKey
-        consumerSecret: testConfig.twitter.consumerSecret
-      linkedin: 
-        apiKey: testConfig.linkedin.apiKey
-        secretKey: testConfig.linkedin.secretKey
+      #twitter:
+        #consumerKey: testConfig.twitter.consumerKey
+        #consumerSecret: testConfig.twitter.consumerSecret
+      #linkedin:
+        #apiKey: testConfig.linkedin.apiKey
+        #secretKey: testConfig.linkedin.secretKey
       mongoose: mongoose
     User = mongoose.model('User', UserSchema)
     SocialUserData = mongoose.model('SocialUserData')
@@ -97,7 +96,7 @@ describe 'Mongoose Social Plugin', () ->
   describe '#_invalidateAccessToken', () ->
     it 'should invalidate an access token for oauth2 for a given service', (done) ->
       User.findById '000000000000000000000003', (err, user) ->
-        throw err if err
+        return done err if err
         expect(user.auth.google.aT).to.be.ok()
         expect(user.auth.google.rT).to.be.ok()
         user._invalidateAccessToken 'google', (err, user) ->
@@ -113,13 +112,13 @@ describe 'Mongoose Social Plugin', () ->
         it 'should refresh an access token', (done) ->
           @timeout(10000);
           User.findById '000000000000000000000003', (err, user) ->
-            throw err if err
+            return done err if err
             oldAccessToken = user.auth.google.aT
             oldRefreshToken = user.auth.google.rT = testConfig.google.refresh_token
             expect(user.auth.google.aT).to.be.ok()
             expect(user.auth.google.rT).to.be.ok()
             user._refreshAccessToken 'google', (err, user) ->
-              throw err if err
+              return done err if err
               expect(user.auth.google.aT).to.be.ok()
               expect(user.auth.google.aT).not.to.be oldAccessToken
               expect(user.auth.google.rT).to.be.ok()
@@ -127,7 +126,7 @@ describe 'Mongoose Social Plugin', () ->
               done()
         it 'should fail correctly if there is no refresh token', (done) ->
           User.findById '000000000000000000000003', (err, user) ->
-            throw err if err
+            return done err if err
             user.auth.google.rT = null
             user._refreshAccessToken 'google', (err, user) ->
               expect(err.message).to.be.ok()
@@ -135,7 +134,7 @@ describe 'Mongoose Social Plugin', () ->
               done()
         it 'should send error information if refresh token is invalid', (done) ->
           User.findById '000000000000000000000003', (err, user) ->
-            throw err if err
+            return done err if err
             user.auth.google.rT = 'failfailfail'
             user._refreshAccessToken 'google', (err, user) ->
               expect(err.message).to.be.ok()
@@ -148,16 +147,16 @@ describe 'Mongoose Social Plugin', () ->
       it 'should get and cache the requested social data', (done) ->
         @timeout(10000);
         User.findById '000000000000000000000005', (err, user) ->
-          throw err  if err
+          return done err  if err
           user.auth.google.aT = testConfig.google.access_token
           user.auth.google.rT = null
           user.getSocial {contacts: ['google'], details: ['google', 'googleplus']}, (err, results) ->
-            throw err  if err
+            return done err  if err
             expect(results.contacts.google.length).to.be.greaterThan(0)
             expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google'], details: ['google', 'googleplus']}).to.be.ok();
             expect(results.contacts.google.error).to.not.be.ok();
             SocialUserData.findOne {_user: '000000000000000000000005'}, (err, socialUserData) ->
-              throw err  if err
+              return done err  if err
               expect(socialUserData.google.contacts.length).to.be.greaterThan(0)
               expect(socialUserData.google.userData.name).to.be.ok()
               expect(socialUserData.google.userData.given_name).to.be.ok()
@@ -167,7 +166,7 @@ describe 'Mongoose Social Plugin', () ->
       userWithABadAccessToken = null
       beforeEach (done) ->
         User.findById '000000000000000000000005', (err, user) ->
-          throw err  if err
+          return done err  if err
           user.auth.google.aT = 'asdfasdfasdf'
           userWithABadAccessToken = user;
           done();
@@ -176,13 +175,13 @@ describe 'Mongoose Social Plugin', () ->
         userWithABadAccessToken.auth.google.rT = testConfig.google.refresh_token
         userWithABadAccessToken.auth.facebook.aT = testConfig.facebook.access_token
         userWithABadAccessToken.getSocial {contacts: ['google', 'facebook'], details: ['google', 'googleplus']}, (err, results) ->
-          throw err  if err
+          return done err  if err
           expect(results.contacts.google.length).to.be.greaterThan(0)
           expect(results.contacts.facebook.length).to.be.greaterThan(0)
           expect(socialGetSpy.calledWith '000000000000000000000005', {contacts: ['google', 'facebook'], details: ['google', 'googleplus']}).to.be.ok();
           expect(results.contacts.google.error).to.not.be.ok();
           SocialUserData.findOne {_user: '000000000000000000000005'}, (err, socialUserData) ->
-            throw err  if err
+            return done err  if err
             expect(socialUserData.google.contacts.length).to.be.greaterThan(0)
             expect(socialUserData.google.userData.name).to.be.ok()
             expect(socialUserData.google.userData.given_name).to.be.ok()
@@ -194,14 +193,14 @@ describe 'Mongoose Social Plugin', () ->
         delete userWithABadAccessToken.auth.google.aT
         userWithABadAccessToken.auth.facebook.aT = 'wrongwrong'
         userWithABadAccessToken.getSocial {contacts: ['facebook']}, (err, results) ->
-          throw err  if err
+          return done err  if err
           expect(results.contacts.facebook.error.message).to.be.ok()
           done()
       it 'should pass errors without a refresh token', (done) ->
         @timeout(10000);
         delete userWithABadAccessToken.auth.google.rT
         userWithABadAccessToken.getSocial {contacts: ['google', 'facebook'], details: ['google']}, (err, results) ->
-          throw err if err
+          return done err if err
           expect(results.contacts.facebook.error.message).to.be.ok()
           expect(results.contacts.google.error.message).to.be.ok()
           expect(results.details.google.error.message).to.be.ok()
@@ -210,7 +209,7 @@ describe 'Mongoose Social Plugin', () ->
         @timeout(10000);
         userWithABadAccessToken.auth.google.rT = 'failfailfail'
         userWithABadAccessToken.getSocial {contacts: ['google', 'facebook'], details: ['google']}, (err, results) ->
-          throw err if err
+          return done err if err
           expect(results.contacts.facebook.error.message).to.be.ok()
           expect(results.contacts.google.error.message).to.be.ok()
           expect(results.details.google.error.message).to.be.ok()
@@ -258,7 +257,7 @@ describe 'Mongoose Social Plugin', () ->
               expect(user.auth.google.rT).to.be '1/vioj8dHiZzxz7oK8wlEoIErBow0uno8-M4ky-ShwHhc'
               expect(user.auth.google.createdAt).to.be.ok()
               SocialUserData.findOne { _user: user._id }, (err, socialUserData) ->
-                throw err  if err
+                return done err  if err
                 expect(socialUserData.google.userData.aTE.refresh_token).to.be '1/vioj8dHiZzxz7oK8wlEoIErBow0uno8-M4ky-ShwHhc'
                 expect(socialUserData.google.userData.email).to.be 'kiesent@gmail.com'
                 expect(socialUserData.google.userData.given_name).to.be 'David'
@@ -347,7 +346,7 @@ describe 'Mongoose Social Plugin', () ->
               expect(user.auth.facebook.aT).to.be 'AAAHOA4xnZBxMBAK4ZCI2PjnhqlMLhMd0aZA9lHpgPMwFN7rw6lOV5HBditZB5Hch2rFIdsNrQOR08qcR2ZAeZA5uAVzK2NNgQZD'
               expect(user.auth.facebook.createdAt).to.be.ok()
               SocialUserData.findOne { _user: user._id }, (err, socialUserData) ->
-                throw err  if err
+                return done err  if err
                 expect(socialUserData.facebook.userData.first_name).to.be 'David'              
                 fbUserMetaData.email = 'ddjsa@umich.edu'
                 delete fbUserMetaData.gender
