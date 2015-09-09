@@ -8,6 +8,7 @@ module.exports = (schema, options) ->
     _user: 
       type: mongoose.Schema.Types.ObjectId
       ref: options.userModel or 'User'
+      index: true
     facebook: 
       userData: {}
       contacts: String
