@@ -34,24 +34,32 @@ module.exports = (schema, options) ->
   schema.add
     auth:
       facebook:
-        id: String
+        id:
+          type: String
+          index: true
         username: String
         aT: String
         createdAt: Date
       twitter:
-        id: String
+        id:
+          type: String
+          index: true
         username: String
         aT: String
         aTS: String
         createdAt: Date
       google:
-        id: String
+        id:
+          type: String
+          index: true
         username: String
         aT: String
         rT: String
         createdAt: Date
       googleplus:
-        id: String
+        id:
+          type: String
+          index: true
         username: String
         aT: String
         rT: String
