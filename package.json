@@ -3,13 +3,14 @@
   "version": "0.0.26",
   "dependencies": {
     "expect.js": "0.1.x",
-    "mongoose": "3.5.x",
     "sinon": "1.4.x",
     "social-request": "0.0.6",
     "coffee-script": "1.3.x",
     "async": "0.1.x"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "mongoose": "3.5.x"
+  },
   "optionalDependencies": {},
   "engines": {
     "node": "*"
